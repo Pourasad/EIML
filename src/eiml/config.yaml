@@ -1,0 +1,134 @@
+# ============================================================
+# EIML-v1 CONFIGURATION FILE
+# Experimentally-Informed Machine Learning Descriptor
+#
+# This file defines how atomic structures are converted into
+# SOAP or EIML-enhanced SOAP descriptors.
+#
+# EIML philosophy:
+# - Geometry is handled by SOAP
+# - Physics-informed scaling is added externally
+# - Descriptor remains kernel-friendly (GPR / SGPR ready)
+# ============================================================
+
+
+# ------------------------------------------------------------
+# Descriptor mode
+# ------------------------------------------------------------
+# "soap" : standard geometric SOAP
+# "eiml" : EIML-v1 (reduced coordinates + dynamic cutoff)
+mode: eiml
+
+
+# ------------------------------------------------------------
+# Structure input
+# ------------------------------------------------------------
+structure:
+  # Path to structure or trajectory file
+  input: water.xyz
+
+  # ASE-supported format (xyz, lammps-dump-text, cfg, etc.)
+  format: xyz
+
+  # Which frame(s) to read:
+  #   0     → first snapshot only
+  #   ":"   → all frames (trajectory)
+  #   "0:10:2" → sliced trajectory
+  index: ":"
+
+
+# ------------------------------------------------------------
+# SOAP descriptor parameters (pure geometry)
+# ------------------------------------------------------------
+soap:
+  # Chemical species present in the system
+  # Must match atomic symbols in the structure
+  species: ["H", "O"]
+
+  # Radial basis size
+  # Larger nmax = finer radial resolution
+  nmax: 8
+
+  # Angular basis size
+  # lmax = 6 is a good compromise for liquids
+  lmax: 6
+
+  # Gaussian smearing width (Å)
+  # Controls smoothness of atomic density
+  sigma: 0.5
+
+  # Periodic boundary conditions
+  # Set true for bulk liquids with a cell
+  periodic: false
+
+  # Averaging mode:
+  # "off"  → per-atom environments
+  # "mean" → average environment
+  average: "off"
+
+  # Sparse representation (usually false for kernels)
+  sparse: false
+
+
+# ------------------------------------------------------------
+# EIML-specific parameters (physics-informed layer)
+# ------------------------------------------------------------
+eiml:
+  # Characteristic molecular or atomic size (Å)
+  # Used to convert absolute distances → reduced distances
+  #
+  # Examples:
+  #   Water      : ~3.0 Å
+  #   Silicon    : ~2.7 Å
+  #   Lennard-Jones fluid : sigma_LJ
+  sigma: 3.0
+
+  # Dynamic cutoff factor
+  # Actual cutoff radius:
+  #   r_cut = k_rcut * sigma
+  #
+  # Typical values:
+  #   2.0 → first shell
+  #   2.5 → ~2–3 solvation shells (recommended)
+  #   3.0 → more long-range structure
+  k_rcut: 2.5
+  omega_rel: 0.10   # Reduced Gaussian width ω*
+
+# ------------------------------------------------------------
+# (Optional) Identity / thermodynamic metadata
+# ------------------------------------------------------------
+# This block is NOT used in EIML-v1 kernels by default.
+# It can be appended later for macroscopic conditioning
+# (e.g. SAFT-like parameters, state variables, etc.)
+#
+# Keep it here for forward compatibility.
+saft:
+  sigma_saft: 3.0      # size parameter
+  epsilon: 250.0       # cohesive energy scale (K or energy units)
+  m: 1.0               # segment number
+  kappa: 0.03          # association volume
+  eps_assoc: 1500.0    # association energy
+  extra: {}            # placeholder for extensions
+
+
+# ------------------------------------------------------------
+# Output control
+# ------------------------------------------------------------
+output:
+  # Pooling over atoms or frames:
+  #   null  → no pooling
+  #   mean  → average descriptor
+  #   sum   → summed descriptor
+  pool: mean
+
+  # Output file name (extension added automatically)
+  #   .npy  → standard descriptor
+  #   .npz  → split geometry / identity
+  file: eiml_features
+
+  # If true:
+  #   - geometry (SOAP / EIML) saved separately
+  #   - identity vector saved separately
+  #
+  # For EIML-v1 benchmarking, keep this FALSE
+  split_identity: false

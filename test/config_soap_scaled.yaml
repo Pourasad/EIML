@@ -1,0 +1,21 @@
+mode: soap
+
+structure:
+  input: water_scaled.xyz
+  format: xyz
+  index: ":"
+
+soap:
+  species: ["H", "O"]
+  rcut: 5.0
+  nmax: 8
+  lmax: 6
+  sigma: 0.5
+  periodic: false
+  average: "off"
+  sparse: false
+
+output:
+  pool: mean
+  file: soap_feat_scaled
+  split_identity: false
