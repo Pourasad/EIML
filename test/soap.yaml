@@ -3,11 +3,11 @@ mode: soap
 structure:
   input: water.xyz
   format: xyz
-  index: ":"
+  index: 0
 
 soap:
-  species: ["H", "O"]
-  rcut: 5.0
+  species: [H, O]
+  rcut: 7.5
   nmax: 8
   lmax: 6
   sigma: 0.5
@@ -16,6 +16,6 @@ soap:
   sparse: false
 
 output:
+  file: soap_features
   pool: mean
-  file: soap_feat
   split_identity: false

@@ -1,134 +1,86 @@
 # ============================================================
-# EIML-v1 CONFIGURATION FILE
-# Experimentally-Informed Machine Learning Descriptor
+# EIML-v1 configuration (SOAP + EIML scaling)
+# ============================================================
+# Modes:
+#   - "soap" : standard SOAP in absolute coordinates (needs soap.rcut)
+#   - "eiml" : EIML-scaled SOAP (reduced coords + dynamic cutoff + adaptive width)
 #
-# This file defines how atomic structures are converted into
-# SOAP or EIML-enhanced SOAP descriptors.
-#
-# EIML philosophy:
-# - Geometry is handled by SOAP
-# - Physics-informed scaling is added externally
-# - Descriptor remains kernel-friendly (GPR / SGPR ready)
+# NOTE:
+#   EIML-v1 does NOT use SAFT thermodynamic identity (epsilon/m/etc.).
+#   Those will come later in EIML-v2 / regression stages.
 # ============================================================
 
+mode: eiml   # "soap" or "eiml"
 
 # ------------------------------------------------------------
-# Descriptor mode
-# ------------------------------------------------------------
-# "soap" : standard geometric SOAP
-# "eiml" : EIML-v1 (reduced coordinates + dynamic cutoff)
-mode: eiml
-
-
-# ------------------------------------------------------------
-# Structure input
+# Structure / trajectory input
 # ------------------------------------------------------------
 structure:
-  # Path to structure or trajectory file
-  input: water.xyz
-
-  # ASE-supported format (xyz, lammps-dump-text, cfg, etc.)
-  format: xyz
-
-  # Which frame(s) to read:
-  #   0     → first snapshot only
-  #   ":"   → all frames (trajectory)
-  #   "0:10:2" → sliced trajectory
-  index: ":"
-
+  input: water.xyz      # Path to structure or trajectory file (ASE-readable)
+  format: xyz           # ASE format (null = auto-detect)
+  index: 0              # 0 = first frame, -1 = last, ":" = all frames
+  # type_map:           # only needed for formats that use numeric types (LAMMPS)
+  #   "1": H
+  #   "2": O
 
 # ------------------------------------------------------------
-# SOAP descriptor parameters (pure geometry)
+# SOAP hyperparameters (geometry basis)
 # ------------------------------------------------------------
 soap:
-  # Chemical species present in the system
-  # Must match atomic symbols in the structure
-  species: ["H", "O"]
+  species: ["H", "O"]   # Chemical species present in the system
 
-  # Radial basis size
-  # Larger nmax = finer radial resolution
-  nmax: 8
+  # rcut is REQUIRED in "soap" mode
+  # rcut may be omitted/null in "eiml" mode because cutoff becomes dynamic
+  rcut: null            # e.g. 5.0 for mode="soap"; keep null for mode="eiml"
 
-  # Angular basis size
-  # lmax = 6 is a good compromise for liquids
-  lmax: 6
+  nmax: 8               # Number of radial basis functions
+  lmax: 6               # Maximum angular momentum
+  sigma: 0.5            # SOAP Gaussian width in Å (ONLY used in mode="soap")
+                        # In mode="eiml", width is set by eiml.omega_rel * eiml.sigma_ref
 
-  # Gaussian smearing width (Å)
-  # Controls smoothness of atomic density
-  sigma: 0.5
-
-  # Periodic boundary conditions
-  # Set true for bulk liquids with a cell
-  periodic: false
-
-  # Averaging mode:
-  # "off"  → per-atom environments
-  # "mean" → average environment
-  average: "off"
-
-  # Sparse representation (usually false for kernels)
-  sparse: false
-
+  periodic: false       # Use periodic boundary conditions (requires cell in structure)
+  average: "off"        # "off", "inner", "outer"
+                        # Must be quoted, otherwise YAML may treat off/true/false specially
+  sparse: false         # Return sparse vectors (dscribe option)
 
 # ------------------------------------------------------------
-# EIML-specific parameters (physics-informed layer)
+# EIML parameters (scale-informed geometry)
 # ------------------------------------------------------------
 eiml:
-  # Characteristic molecular or atomic size (Å)
-  # Used to convert absolute distances → reduced distances
-  #
-  # Examples:
-  #   Water      : ~3.0 Å
-  #   Silicon    : ~2.7 Å
-  #   Lennard-Jones fluid : sigma_LJ
+  # Molecular/segment size scale σ (Å):
+  # - for one-component liquids: set sigma
+  # - for mixtures: you MAY later provide sigma_by_species (optional)
   sigma: 3.0
 
-  # Dynamic cutoff factor
-  # Actual cutoff radius:
-  #   r_cut = k_rcut * sigma
-  #
-  # Typical values:
-  #   2.0 → first shell
-  #   2.5 → ~2–3 solvation shells (recommended)
-  #   3.0 → more long-range structure
+  # Dimensionless cutoff multiplier:
+  #   R_cut = k_rcut * sigma_ref
+  # Typical: 2.5–3.5 (captures ~2–3 solvation shells depending on liquid)
   k_rcut: 2.5
-  omega_rel: 0.10   # Reduced Gaussian width ω*
 
-# ------------------------------------------------------------
-# (Optional) Identity / thermodynamic metadata
-# ------------------------------------------------------------
-# This block is NOT used in EIML-v1 kernels by default.
-# It can be appended later for macroscopic conditioning
-# (e.g. SAFT-like parameters, state variables, etc.)
-#
-# Keep it here for forward compatibility.
-saft:
-  sigma_saft: 3.0      # size parameter
-  epsilon: 250.0       # cohesive energy scale (K or energy units)
-  m: 1.0               # segment number
-  kappa: 0.03          # association volume
-  eps_assoc: 1500.0    # association energy
-  extra: {}            # placeholder for extensions
+  # Reduced Gaussian width ω* (dimensionless):
+  #   omega_abs = omega_rel * sigma_ref
+  # Typical: 0.10–0.15
+  omega_rel: 0.10
 
+  # Optional: per-species σ for mixtures or center-dependent scaling
+  # sigma_by_species:
+  #   O: 3.0
+  #   H: 2.5
 
+  # ----------------------------------------------------------
+  # EIML-v1.1: epsilon-based channel weighting (optional)
+  # ----------------------------------------------------------
+  enable_weighting: true
+  # Raw per-species importance (must be positive). Normalized internally.
+  epsilon:
+    O: 1.5
+    H: 0.5
+  # Damping exponent alpha in (0, 1]; smaller -> weaker effect (more SOAP-like)
+  epsilon_alpha: 0.5
 # ------------------------------------------------------------
 # Output control
 # ------------------------------------------------------------
 output:
-  # Pooling over atoms or frames:
-  #   null  → no pooling
-  #   mean  → average descriptor
-  #   sum   → summed descriptor
-  pool: mean
-
-  # Output file name (extension added automatically)
-  #   .npy  → standard descriptor
-  #   .npz  → split geometry / identity
-  file: eiml_features
-
-  # If true:
-  #   - geometry (SOAP / EIML) saved separately
-  #   - identity vector saved separately
-  #
-  # For EIML-v1 benchmarking, keep this FALSE
-  split_identity: false
+  pool: mean            # null -> per-atom descriptors, mean -> global average, sum -> global sum
+  file: eiml_features   # output path base (extension enforced by save.py)
+  split_identity: false # in v1, keep false (identity/metadata splitting comes later)

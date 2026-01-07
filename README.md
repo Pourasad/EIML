@@ -19,28 +19,32 @@ EIML introduces **experimentally informed scaling rules** inspired by statistica
 - better suited for liquid-state learning
 
 ---
-
 ## EIML-v1: Implemented Features
 
 EIML-v1 extends a SOAP-like framework with:
 
-1. **Reduced coordinates**
-   - All interatomic distances are expressed in reduced form:  
-     \( r^* = r / \sigma \)
-   - \( \sigma \) represents a characteristic molecular size.
+### 1. Reduced coordinates
+All interatomic distances are expressed in reduced form:
 
-2. **Dynamic cutoff**
-   - The neighbor cutoff is defined as  
-     \( R_\text{cut} = k_\text{rcut} \cdot \sigma \)
-   - Ensures a consistent number of solvation shells across systems.
+r* = r / sigma
 
-3. **Adaptive Gaussian width**
-   - Gaussian width is defined as a fraction of \( \sigma \):  
-     \( \omega = \omega^* \cdot \sigma \)
-   - Prevents over-localization or delta-like densities.
+where sigma represents a characteristic molecular size.
 
-These changes preserve the mathematical structure of SOAP while enforcing **scale invariance**.
+### 2. Dynamic cutoff
+The neighbor cutoff is defined as:
 
+R_cut = k_rcut * sigma
+
+This ensures a consistent number of solvation shells across systems.
+
+### 3. Adaptive Gaussian width
+The Gaussian width is defined as:
+
+omega = omega* * sigma
+
+This prevents over-localization or delta-like atomic densities.
+
+These changes preserve the mathematical structure of SOAP while enforcing scale invariance.
 ---
 
 ## What EIML-v1 Is *Not*

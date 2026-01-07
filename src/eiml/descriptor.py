@@ -15,7 +15,7 @@ Backward compatibility:
 from __future__ import annotations
 
 from typing import Optional, Tuple, Union
-
+from .weights import apply_species_pair_scaling, normalize_species_epsilon
 import numpy as np
 from ase import Atoms
 from dscribe.descriptors import SOAP as DScribeSOAP
@@ -70,6 +70,8 @@ class SOAPSAFT:
         eiml_params: Optional[EIMLParams] = None,
         saft_params: Optional[SAFTParams] = None,   # legacy identity support
     ):
+        self.soap_params = soap_params
+
         self.mode = str(mode).strip().lower()
         if self.mode == "saft":
             self.mode = "eiml"
@@ -79,6 +81,8 @@ class SOAPSAFT:
 
         self.eiml_params = eiml_params
         self.saft_params = saft_params  # optional, for identity vector only
+        # Debug guard: ensure epsilon weights printed once per run
+        self._printed_epsilon_weights = False
 
         # ----------------------------
         # Determine effective length scale and cutoff
@@ -114,6 +118,13 @@ class SOAPSAFT:
             # In reduced coordinates: divide cutoff by sigma_ref
             r_cut_eff = rcut_phys / sigma_ref
 
+            # --- EIML invariant check ---
+            # Because rcut_phys = k_rcut * sigma_ref (when using dynamic cutoff),
+            # the reduced cutoff must be exactly k_rcut.
+            if soap_params.rcut is None:  # only when dynamic cutoff is active
+                assert abs(r_cut_eff - float(self.eiml_params.k_rcut)) < 1e-8, \
+                    "EIML invariant broken: reduced r_cut must equal k_rcut"
+
             # Reduced Gaussian width (dimensionless)
             # Preferred: omega_rel (dimensionless). If missing, fallback for backward compatibility.
             if getattr(self.eiml_params, "omega_rel", None) is not None:
@@ -141,19 +152,19 @@ class SOAPSAFT:
 
         # r_cut keyword is r_cut for the DScribe version; keep shim just in case
         # Decide effective cutoff
-        if self.mode == "soap":
-            if soap_params.rcut is None:
-                raise ValueError(
-                    "In mode='soap', you must set soap.rcut in the YAML (e.g., soap: {rcut: 5.0})."
-                )
-            r_cut_eff = float(soap_params.rcut)
-
-        elif self.mode == "eiml":
-            # dynamic cutoff: r_cut = k_rcut * sigma
-            r_cut_eff = float(self.eiml_params.k_rcut) * float(self.eiml_params.sigma)
-
-        else:
-            raise ValueError("mode must be 'soap' or 'eiml'")
+#        if self.mode == "soap":
+#            if soap_params.rcut is None:
+#                raise ValueError(
+#                    "In mode='soap', you must set soap.rcut in the YAML (e.g., soap: {rcut: 5.0})."
+#                )
+#            r_cut_eff = float(soap_params.rcut)
+#
+#        elif self.mode == "eiml":
+#            # dynamic cutoff: r_cut = k_rcut * sigma
+#            r_cut_eff = float(self.eiml_params.k_rcut) * float(self.eiml_params.sigma)
+#
+#        else:
+#            raise ValueError("mode must be 'soap' or 'eiml'")
         try:
             self._soap = DScribeSOAP(r_cut=float(r_cut_eff), **soap_kwargs)
         except TypeError:
@@ -212,6 +223,34 @@ class SOAPSAFT:
 
         # Geometry-only feature(s)
         feat = _to_dense(self._soap.create(atoms_use, centers=centers))
+
+        # EIML v1.1: epsilon-based channel weighting (normalized internally)
+        if (
+            self.mode == "eiml"
+            and self.eiml_params is not None
+            and getattr(self.eiml_params, "enable_weighting", False)
+        ):
+            species_weights = normalize_species_epsilon(
+                epsilon=self.eiml_params.epsilon,
+                species=self.soap_params.species,
+                alpha=float(getattr(self.eiml_params, "epsilon_alpha", 1.0)),
+            )
+
+            # ---- DEBUG PRINT (once per run) ----
+            if not self._printed_epsilon_weights:
+                print("[EIML] Normalized epsilon-based species weights:")
+                for sp, w in species_weights.items():
+                    print(f"  {sp}: {w:.6f}")
+                print(f"[EIML] epsilon_alpha = {self.eiml_params.epsilon_alpha}")
+                self._printed_epsilon_weights = True
+            # -----------------------------------
+
+            feat = apply_species_pair_scaling(
+                soap_obj=self._soap,
+                X=feat,
+                species=self.soap_params.species,
+                species_weights=species_weights,
+            )
 
         theta = self._identity
 
