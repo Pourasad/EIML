@@ -34,11 +34,9 @@ EIML-v1.1 extends a SOAP-like framework with the following **orthogonal, modular
 
 All interatomic distances are expressed in reduced form:
 
-\[
-r^* = \frac{r}{\sigma}
-\]
+r* = r / σ
 
-where \(\sigma\) is a characteristic molecular or segment size.
+where σ is a characteristic molecular or segment size.
 
 This removes explicit length-scale dependence from the descriptor geometry.
 
@@ -48,9 +46,7 @@ This removes explicit length-scale dependence from the descriptor geometry.
 
 The neighbor cutoff is defined as:
 
-\[
-R_{\text{cut}} = k_{\text{rcut}} \cdot \sigma
-\]
+R_cut = k_rcut · σ
 
 This enforces a **consistent number of solvation shells** across systems with different molecular sizes or densities.
 
@@ -60,9 +56,7 @@ This enforces a **consistent number of solvation shells** across systems with di
 
 The atomic density smearing width is defined as:
 
-\[
-\omega = \omega^* \cdot \sigma
-\]
+ω = ω* · σ
 
 This prevents over-localization and ensures comparable density smoothness across scales.
 
@@ -72,16 +66,15 @@ This prevents over-localization and ensures comparable density smoothness across
 
 EIML-v1.1 introduces **optional per-species channel weighting**, designed to encode relative chemical importance **without dominating the power spectrum**.
 
-- User provides raw per-species importance values \(\epsilon_s\)
+- User provides raw per-species importance values ε_s
 - Internal normalization ensures:
-  - mean weight = 1  
-  - controlled influence via damping exponent \(\alpha \in (0, 1]\)
+  - mean weight = 1
+  - controlled influence via damping exponent α in (0, 1]
 
 This mechanism is:
 - **off by default**
 - fully backward compatible with geometry-only EIML
-- independent of the source of \(\epsilon\) (SAFT, LJ, empirical, etc.)
-
+- independent of the source of ε (SAFT, LJ, empirical, etc.)
 ---
 
 ## What EIML Is *Not*
