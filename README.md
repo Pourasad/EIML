@@ -1,70 +1,118 @@
-# EIML – Experimentally Informed Machine Learning (v1)
+# EIML – Experimentally Informed Machine Learning (v1.1)
 
-EIML is a research codebase for constructing **physically informed local atomic descriptors for liquids**, designed to bridge **microscopic machine learning representations** and **macroscopic thermodynamic knowledge**.
+**EIML** is a research codebase for constructing **physically informed local atomic descriptors for liquids**, designed to bridge **microscopic machine-learning representations** and **macroscopic thermodynamic insight**.
 
-This repository contains **EIML-v1**, the first stable implementation focusing on **geometric normalization and scale consistency**.
+This repository currently hosts **EIML-v1.1**, which extends SOAP with **scale-consistent reduced geometry** and **optional energy-aware channel weighting**, while remaining fully compatible with kernel methods such as **GPR / SGPR**.
 
 ---
 
 ## Motivation
 
-Standard geometric descriptors (e.g. SOAP) are defined in **absolute coordinates**, which can limit their transferability across:
-- densities
-- temperatures
-- chemically similar liquids of different molecular size
+Standard geometric descriptors (e.g. SOAP) are defined in **absolute coordinates**, which limits transferability across:
 
-EIML introduces **experimentally informed scaling rules** inspired by statistical thermodynamics to make descriptors:
-- less data-hungry
-- more physically interpretable
-- better suited for liquid-state learning
+- density changes  
+- temperature variations  
+- chemically similar liquids with different molecular size  
+
+EIML introduces **experimentally informed normalization principles**, inspired by statistical thermodynamics, to make descriptors:
+
+- more transferable  
+- more physically interpretable  
+- better suited for liquid-state learning  
+
+without changing the underlying SOAP formalism.
 
 ---
-## EIML-v1: Implemented Features
 
-EIML-v1 extends a SOAP-like framework with:
+## EIML-v1.1: Implemented Features
 
-### 1. Reduced coordinates
+EIML-v1.1 extends a SOAP-like framework with the following **orthogonal, modular enhancements**:
+
+---
+
+### 1. Reduced Coordinates (Scale Invariance)
+
 All interatomic distances are expressed in reduced form:
 
-r* = r / sigma
+\[
+r^* = \frac{r}{\sigma}
+\]
 
-where sigma represents a characteristic molecular size.
+where \(\sigma\) is a characteristic molecular or segment size.
 
-### 2. Dynamic cutoff
-The neighbor cutoff is defined as:
+This removes explicit length-scale dependence from the descriptor geometry.
 
-R_cut = k_rcut * sigma
-
-This ensures a consistent number of solvation shells across systems.
-
-### 3. Adaptive Gaussian width
-The Gaussian width is defined as:
-
-omega = omega* * sigma
-
-This prevents over-localization or delta-like atomic densities.
-
-These changes preserve the mathematical structure of SOAP while enforcing scale invariance.
 ---
 
-## What EIML-v1 Is *Not*
+### 2. Dynamic Cutoff (Shell Consistency)
 
-- It is **not** claimed to outperform SOAP in all benchmarks.
-- It does **not yet include energetic (ε-weighted) density contributions**.
-- It is **not a trained force field**.
+The neighbor cutoff is defined as:
 
-EIML-v1 is a **descriptor foundation**, intended for integration with kernel methods (GPR, SGPR) and future extensions.
+\[
+R_{\text{cut}} = k_{\text{rcut}} \cdot \sigma
+\]
+
+This enforces a **consistent number of solvation shells** across systems with different molecular sizes or densities.
+
+---
+
+### 3. Adaptive Gaussian Width
+
+The atomic density smearing width is defined as:
+
+\[
+\omega = \omega^* \cdot \sigma
+\]
+
+This prevents over-localization and ensures comparable density smoothness across scales.
+
+---
+
+### 4. ε-Based Channel Weighting (Optional, v1.1)
+
+EIML-v1.1 introduces **optional per-species channel weighting**, designed to encode relative chemical importance **without dominating the power spectrum**.
+
+- User provides raw per-species importance values \(\epsilon_s\)
+- Internal normalization ensures:
+  - mean weight = 1  
+  - controlled influence via damping exponent \(\alpha \in (0, 1]\)
+
+This mechanism is:
+- **off by default**
+- fully backward compatible with geometry-only EIML
+- independent of the source of \(\epsilon\) (SAFT, LJ, empirical, etc.)
+
+---
+
+## What EIML Is *Not*
+
+- ❌ Not claimed to universally outperform SOAP  
+- ❌ Not a force field or potential  
+- ❌ Not tied to a specific thermodynamic model  
+
+EIML is a **descriptor framework**, intended for:
+- kernel methods (GPR, SGPR)
+- systematic transferability studies
+- physically interpretable ML for liquids
 
 ---
 
 ## Repository Structure
 
-src/eiml/        Core descriptor implementation
-test/            Minimal test cases and example configurations
+- src/eiml/        Core descriptor implementation
+- test/            Minimal validation & comparison tests
+
+The `test/` directory contains:
+- SOAP vs EIML comparisons
+- cosine similarity and norm diagnostics
+- example YAML configurations
+
+Nothing in `test/` is imported by the main library.
 
 ---
 
-## Usage (Example)
+## Usage Example
 
 ```bash
-PYTHONPATH=src python -m eiml.cli --config test/config_eiml.yaml
+PYTHONPATH=src python -m eiml.cli --config test/soap.yaml
+PYTHONPATH=src python -m eiml.cli --config test/eiml.yaml
