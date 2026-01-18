@@ -275,7 +275,6 @@ class SOAPSAFT:
 
         return feat_pooled
 
-
 def compute_descriptor(
     atoms: Union[Atoms, list],
     mode: str,
@@ -283,6 +282,7 @@ def compute_descriptor(
     eiml_params: Optional[EIMLParams] = None,
     saft_params: Optional[SAFTParams] = None,   # legacy identity support
     pool: Optional[str] = None,
+    centers=None,
     append_identity: bool = True,
     return_identity: bool = False,
 ) -> Union[np.ndarray, Tuple[np.ndarray, Optional[np.ndarray]]]:
@@ -290,9 +290,13 @@ def compute_descriptor(
     Convenience wrapper around SOAPSAFT.create(...).
 
     Supports:
-      - single ASE Atoms -> returns (nfeat,) if pool is not None, else (natoms, nfeat)
-      - list/tuple of Atoms (trajectory) -> returns (nframes, nfeat) if pool is not None
-        (or (nframes, natoms, nfeat) if pool is None)
+      - single ASE Atoms -> returns:
+          pooled   => (D,)
+          unpooled => (n_centers, D)  (or (natoms, D) if centers=None)
+      - list/tuple of Atoms (trajectory) -> returns:
+          pooled   => (nframes, D)
+          unpooled => (nframes, n_centers, D) with fixed centers;
+                     if centers=None, uses all atoms per frame => (nframes, natoms, D)
     """
     calc = SOAPSAFT(
         soap_params=soap_params,
@@ -301,34 +305,44 @@ def compute_descriptor(
         saft_params=saft_params,
     )
 
-    # --- Trajectory case ---
+    # ---- Trajectory case ----
     if isinstance(atoms, (list, tuple)):
-        X_list = []
-        theta = None
+        frames = list(atoms)
+        if len(frames) == 0:
+            raise ValueError("atoms trajectory is empty.")
 
-        for at in atoms:
-            out = calc.create(
-                atoms=at,
-                pool=pool,
-                append_identity=append_identity,
-                return_identity=return_identity,
-            )
+        out_list = []
+        theta_out = None
 
+        for i, a in enumerate(frames):
             if return_identity:
-                xg, th = out
-                X_list.append(np.asarray(xg))
-                theta = th
+                X_i, theta_i = calc.create(
+                    atoms=a,
+                    centers=centers,
+                    pool=pool,
+                    append_identity=append_identity,
+                    return_identity=True,
+                )
+                out_list.append(X_i)
+                if theta_out is None:
+                    theta_out = theta_i
             else:
-                X_list.append(np.asarray(out))
+                X_i = calc.create(
+                    atoms=a,
+                    centers=centers,
+                    pool=pool,
+                    append_identity=append_identity,
+                    return_identity=False,
+                )
+                out_list.append(X_i)
 
-        X = np.stack(X_list, axis=0)
-        if return_identity:
-            return X, theta
-        return X
+        X = np.stack(out_list, axis=0)
+        return (X, theta_out) if return_identity else X
 
-    # --- Single frame case ---
+    # ---- Single-frame case ----
     return calc.create(
         atoms=atoms,
+        centers=centers,
         pool=pool,
         append_identity=append_identity,
         return_identity=return_identity,

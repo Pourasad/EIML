@@ -61,6 +61,23 @@ def params_from_config(cfg: Dict[str, Any]):
     if "input" not in structure_cfg:
         raise ValueError("config: structure.input is required")
 
+    # ---------- pool ----------
+    pool_cfg = cfg.get("pool", None)
+
+    if pool_cfg is None:
+        pool = None
+    elif isinstance(pool_cfg, str):
+        pool = pool_cfg.strip().lower()
+    elif isinstance(pool_cfg, dict):
+        pool = str(pool_cfg.get("kind", "")).strip().lower()
+    else:
+        raise ValueError("config: pool must be null, a string, or a mapping like {kind: mean}")
+
+    if pool in ("", "none", "null"):
+        pool = None
+    if pool not in (None, "mean", "sum"):
+        raise ValueError("config: pool.kind must be one of: mean, sum (or omit pool)")
+
     # ---------- soap ----------
     soap_cfg = cfg.get("soap", {})
     if not isinstance(soap_cfg, dict):
@@ -153,10 +170,10 @@ def params_from_config(cfg: Dict[str, Any]):
         )
 
     # ---------- output ----------
-    out_cfg = cfg.get("output", {})
-    if not isinstance(out_cfg, dict):
-        raise ValueError("config: output must be a mapping/dict")
-    pool = out_cfg.get("pool", None)
-    output_file = str(out_cfg.get("file", "features"))
+    out_cfg = cfg.get("output", {}) or {}
+    output_file = out_cfg.get("file", None)
+    if output_file is None:
+        raise ValueError("config: output.file is required")
+    output_file = str(output_file)
 
     return mode, structure_cfg, soap_params, saft_params, eiml_params, pool, output_file

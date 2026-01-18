@@ -1,7 +1,9 @@
+# src/eiml/save.py
+
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Tuple, Union
+from typing import Any, Optional, Tuple, Union
 import numpy as np
 
 Array = np.ndarray
@@ -16,32 +18,60 @@ def _strip_known_suffixes(p: Path) -> Path:
     return p
 
 
-def _normalize_feature_array(X: np.ndarray) -> np.ndarray:
+def _normalize_feature_array(
+    X: np.ndarray,
+    *,
+    flatten_atoms: bool = True,
+    pool: Optional[str] = None,
+) -> np.ndarray:
     """
-    Normalize descriptor array shapes into a consistent representation.
+    Normalize descriptor output into a 2D feature matrix (N, D).
 
-    Accept:
-      - (nfeat,)
-      - (1, nfeat)
-      - (N, nfeat)
+    Supported input shapes:
+      - (N, D)                         -> unchanged
+      - (n_frames, n_atoms, D)         -> either flatten or pool over atoms
+      - (D,)                           -> treated as (1, D)
 
-    Return:
-      - (nfeat,) for single vectors
-      - (N, nfeat) for multiple entries
+    Behavior for 3D:
+      - if pool in {"mean","sum","max"}: reduce over axis=1 -> (n_frames, D)
+      - else if flatten_atoms=True:      reshape -> (n_frames*n_atoms, D)
+      - else: raise
     """
     if not isinstance(X, np.ndarray):
-        raise ValueError("Expected a numpy.ndarray for feature array.")
+        X = np.asarray(X)
 
     if X.ndim == 1:
-        return X
+        X2 = X.reshape(1, -1)
 
-    if X.ndim == 2 and X.shape[0] == 1:
-        return X[0]
+    elif X.ndim == 2:
+        X2 = X
 
-    if X.ndim == 2:
-        return X
+    elif X.ndim == 3:
+        # (frames, atoms, D)
+        pool_kind = None if pool is None else str(pool).lower().strip()
+        if pool_kind in ("mean", "avg"):
+            X2 = X.mean(axis=1)
+        elif pool_kind == "sum":
+            X2 = X.sum(axis=1)
+        elif pool_kind == "max":
+            X2 = X.max(axis=1)
+        else:
+            if flatten_atoms:
+                X2 = X.reshape(-1, X.shape[-1])
+            else:
+                raise ValueError(
+                    f"Got 3D features {X.shape} but flatten_atoms=False and pool=None. "
+                    "Set flatten_atoms=True or pool to one of {mean,sum,max}."
+                )
+    else:
+        raise ValueError(f"Unsupported feature array shape {X.shape} (ndim={X.ndim}).")
 
-    raise ValueError(f"Unsupported feature array shape {X.shape}.")
+    # ensure numeric, 2D, finite dtype
+    X2 = np.asarray(X2, dtype=np.float64)
+    if X2.ndim != 2:
+        raise ValueError(f"Internal error: expected 2D array, got shape {X2.shape}")
+
+    return X2
 
 
 def _normalize_identity(theta: np.ndarray) -> np.ndarray:
@@ -57,45 +87,32 @@ def _normalize_identity(theta: np.ndarray) -> np.ndarray:
 
     raise ValueError(f"Unsupported identity array shape {theta.shape}.")
 
-
 def save_features(
     *,
     mode: str,
     output_file: str,
     split_identity: bool,
-    X_or_pair: XOrPair,
-) -> str:
+    X_or_pair: Union[np.ndarray, Tuple[np.ndarray, Any]],
+    flatten_atoms: bool = True,
+    pool: Optional[str] = None,
+) -> None:
     """
-    Save computed descriptors to disk.
+    Save descriptor features to disk.
 
-    Rules
-    -----
-    - split_identity == False  -> save .npy
-    - split_identity == True   -> save .npz with keys:
-          X_geom, theta_id
+    - If split_identity=False: saves a .npy array (N,D)
+    - If split_identity=True: saves a .npz with keys:
+          X = (N,D)
+          theta = identity array/object (if provided)
     """
-    base = _strip_known_suffixes(Path(output_file)).expanduser().resolve()
-    base.parent.mkdir(parents=True, exist_ok=True)
+    out = Path(output_file)
+    out.parent.mkdir(parents=True, exist_ok=True)
 
     if split_identity:
-        if not isinstance(X_or_pair, tuple) or len(X_or_pair) != 2:
-            raise ValueError("split_identity=True expects (X_geom, theta_id).")
-
-        X_geom, theta_id = X_or_pair
-        X_geom = _normalize_feature_array(X_geom)
-        theta_id = _normalize_identity(theta_id)
-
-        out_path = str(base.with_suffix(".npz"))
-        np.savez(out_path, X_geom=X_geom, theta_id=theta_id, mode=str(mode))
-        print(f"Saved features to {out_path}")
-        return out_path
-
-    # No identity splitting
-    if not isinstance(X_or_pair, np.ndarray):
-        raise ValueError("split_identity=False expects a numpy.ndarray.")
-
-    X = _normalize_feature_array(X_or_pair)
-    out_path = str(base.with_suffix(".npy"))
-    np.save(out_path, X)
-    print(f"Saved features to {out_path}")
-    return out_path
+        if not (isinstance(X_or_pair, (tuple, list)) and len(X_or_pair) == 2):
+            raise ValueError("split_identity=True expects X_or_pair=(X_geom, theta_id).")
+        X_geom, theta = X_or_pair
+        X = _normalize_feature_array(X_geom, flatten_atoms=flatten_atoms, pool=pool)
+        np.savez(out.with_suffix(".npz"), X=X, theta=theta, mode=str(mode))
+    else:
+        X = _normalize_feature_array(X_or_pair, flatten_atoms=flatten_atoms, pool=pool)
+        np.save(out, X)
