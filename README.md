@@ -1,111 +1,196 @@
-# EIML – Experimentally Informed Machine Learning (v1.1)
+# EIML — Experimentally Informed Machine Learning (v0.2)
 
-**EIML** is a research codebase for constructing **physically informed local atomic descriptors for liquids**, designed to bridge **microscopic machine-learning representations** and **macroscopic thermodynamic insight**.
+**EIML** is a research toolkit for constructing **physically informed local atomic descriptors** and **learning materials properties with kernel-based machine learning**, with a focus on liquids and disordered systems.
 
-This repository currently hosts **EIML-v1.1**, which extends SOAP with **scale-consistent reduced geometry** and **optional energy-aware channel weighting**, while remaining fully compatible with kernel methods such as **GPR / SGPR**.
+EIML combines:
+- SOAP-based geometric descriptors
+- physically motivated normalization and weighting (EIML)
+- Sparse Gaussian Process Regression (SGPR) for scalable property learning
+
+The framework is designed to bridge **local atomic environments** and **macroscopic thermodynamic or mechanical properties**, while remaining **transparent, modular, and interpretable**.
+
+---
+
+## What EIML Is (v0.2)
+
+✔ A **descriptor + property-learning toolkit**  
+✔ Suitable for learning:
+- forces
+- pressures
+- energies
+- other local or global observables  
+
+✔ Works with:
+- classical MD data
+- ab initio data (e.g. VASP, Quantum ESPRESSO, CP2K)
+- arbitrary atomic systems (liquids, solids, clusters)
+
+✔ Designed for:
+- systematic comparison of descriptors
+- transferability studies
+- physics-aware machine learning analysis
+
+---
+
+## What EIML Is *Not*
+
+- ❌ Not (yet) a production-ready ML interatomic potential (MLIP)
+- ❌ No direct LAMMPS / ASE calculator interface in v0.2
+- ❌ No enforced energy–force consistency
+
+**EIML v0.2 focuses on property learning, not MD deployment.**  
+A full MLIP interface is planned for a future version.
 
 ---
 
 ## Motivation
 
-Standard geometric descriptors (e.g. SOAP) are defined in **absolute coordinates**, which limits transferability across:
+Standard local descriptors (e.g. SOAP) are defined in **absolute coordinates**, which limits transferability across:
 
-- density changes  
-- temperature variations  
-- chemically similar liquids with different molecular size  
+- density changes
+- temperature variations
+- chemically similar systems with different length scales
 
 EIML introduces **experimentally informed normalization principles**, inspired by statistical thermodynamics, to make descriptors:
 
-- more transferable  
-- more physically interpretable  
-- better suited for liquid-state learning  
+- scale-consistent
+- more transferable
+- physically interpretable
 
 without changing the underlying SOAP formalism.
 
 ---
 
-## EIML-v1.1: Implemented Features
+## EIML Descriptor Extensions
 
-EIML-v1.1 extends a SOAP-like framework with the following **orthogonal, modular enhancements**:
+EIML extends SOAP with **orthogonal, modular enhancements**.
 
 ---
 
 ### 1. Reduced Coordinates (Scale Invariance)
 
-All interatomic distances are expressed in reduced form:
+All interatomic distances are expressed in **reduced form**:
 
-r* = r / σ
+r_reduced = r / sigma
 
-where σ is a characteristic molecular or segment size.
-
-This removes explicit length-scale dependence from the descriptor geometry.
-
----
-
-### 2. Dynamic Cutoff (Shell Consistency)
-
-The neighbor cutoff is defined as:
-
-R_cut = k_rcut · σ
-
-This enforces a **consistent number of solvation shells** across systems with different molecular sizes or densities.
+This enforces a **consistent number of coordination shells** across:
+- different densities
+- different molecular sizes
+- different thermodynamic states
 
 ---
 
 ### 3. Adaptive Gaussian Width
 
-The atomic density smearing width is defined as:
+The atomic density smearing width scales as:
 
-ω = ω* · σ
+omega = omega_ref * sigma
 
-This prevents over-localization and ensures comparable density smoothness across scales.
+This ensures comparable smoothness of atomic density fields across systems with different length scales.
 
 ---
 
-### 4. ε-Based Channel Weighting (Optional, v1.1)
+### 4. ε-Based Channel Weighting (Optional)
 
-EIML-v1.1 introduces **optional per-species channel weighting**, designed to encode relative chemical importance **without dominating the power spectrum**.
+Optional per-species channel weighting allows encoding **relative chemical importance**:
 
-- User provides raw per-species importance values ε_s
-- Internal normalization ensures:
-  - mean weight = 1
-  - controlled influence via damping exponent α in (0, 1]
+- user provides raw importance values `epsilon_s`
+- internal normalization enforces:
+  - mean channel weight = 1
+  - controlled influence via damping exponent `alpha` in (0, 1]
 
 This mechanism is:
-- **off by default**
-- fully backward compatible with geometry-only EIML
-- independent of the source of ε (SAFT, LJ, empirical, etc.)
----
-
-## What EIML Is *Not*
-
-- ❌ Not claimed to universally outperform SOAP  
-- ❌ Not a force field or potential  
-- ❌ Not tied to a specific thermodynamic model  
-
-EIML is a **descriptor framework**, intended for:
-- kernel methods (GPR, SGPR)
-- systematic transferability studies
-- physically interpretable ML for liquids
+- off by default
+- fully backward compatible with geometry-only SOAP / EIML
+- independent of the physical origin of `epsilon_s` (SAFT, LJ, empirical, etc.)
 
 ---
 
-## Repository Structure
+## SGPR: Property Learning Engine (v0.2)
 
-- src/eiml/        Core descriptor implementation
-- test/            Minimal validation & comparison tests
+EIML v0.2 includes a **native Sparse Gaussian Process Regression (SGPR)** implementation:
 
-The `test/` directory contains:
-- SOAP vs EIML comparisons
-- cosine similarity and norm diagnostics
-- example YAML configurations
+- inducing-point approximation
+- supports **multi-output regression** (e.g. vector forces)
+- CPU-based NumPy implementation
+- scalable to tens of thousands of local environments
 
-Nothing in `test/` is imported by the main library.
+Supported inducing strategies:
+- random
+- k-means
+- farthest-point sampling (FPS)
+
+SGPR is intended for **analysis, benchmarking, and property learning**, not yet for large-scale production MD.
 
 ---
 
-## Usage Example
+## Typical Workflow
+
+### 1. Featurization
 
 ```bash
-PYTHONPATH=src python -m eiml.cli --config test/soap.yaml
-PYTHONPATH=src python -m eiml.cli --config test/eiml.yaml
+eiml featurize --config path/to/config.yaml
+```
+
+Computes SOAP or EIML descriptors and writes .npy feature arrays.
+
+### 2. Training (SGPR)
+
+```bash
+eiml train sgpr \
+  --X X.npy \
+  --y y.npy \
+  --outdir model_dir \
+  --inducing fps \
+  --M 1024 \
+  --standardize
+```
+
+Trains an SGPR model and saves:
+- model parameters
+- standardization scalers
+- training and test metrics
+
+### Prediction
+
+```bash
+eiml predict sgpr \
+  --modeldir model_dir \
+  --X X_new.npy \
+  --outdir preds
+```
+
+Outputs predictions and approximate uncertainties.
+
+
+---
+## Repository Structure
+
+```bash
+src/eiml/
+  descriptor.py      Descriptor implementation
+  models/sgpr.py     SGPR model
+  cli.py             Unified command-line interface
+  config.py          YAML parsing
+  save.py            Feature and model I/O
+
+experiments/
+  Example workflows, datasets, and scripts
+```
+
+The experiments/ directory contains examples only and is not required for library usage.
+
+---
+## Current Version
+
+v0.2.0 — Descriptor + SGPR property-learning toolkit
+
+---
+
+## Roadmap
+
+- v0.3: improved uncertainty estimates, force–energy consistency
+- v0.4: ASE calculator interface
+- v1.0: MLIP-ready EIML potential
+
+
