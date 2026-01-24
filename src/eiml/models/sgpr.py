@@ -202,10 +202,8 @@ class SGPRModel:
         #   mu = (1/s2) * c             (M,P)
         #   alpha = Kmm^{-1} mu         (M,P) via chol solve of Kmm
         a = Kmn @ Y                      # (M,P)
-        b = (Kmm @ a)                    # (M,P)
-        c = _chol_solve(LA, b)           # (M,P)
-        mu = c / s2                      # (M,P)
-        alpha = _chol_solve(Lmm, mu)     # (M,P)
+        c = _chol_solve(LA, a)           # (M,P)
+        alpha = c / s2                   # (M,P)
 
         self.alpha = alpha
         self.Lmm = Lmm
