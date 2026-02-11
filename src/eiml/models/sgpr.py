@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Tuple, Dict, Any, Union
 
 import numpy as np
 
@@ -13,51 +13,69 @@ except Exception:
     _HAS_SKLEARN = False
 
 
-def _rbf_kernel(X: np.ndarray, Z: np.ndarray, length_scale: float) -> np.ndarray:
+LengthScale = Union[float, np.ndarray]
+
+
+def _as_length_scale(ls: LengthScale, D: int) -> np.ndarray:
+    """Return length-scale as an array of shape (D,), broadcasting if scalar."""
+    arr = np.asarray(ls, dtype=np.float64)
+    if arr.ndim == 0:
+        return np.full((D,), float(arr), dtype=np.float64)
+    if arr.ndim != 1 or arr.shape[0] != D:
+        raise ValueError(f"length_scale must be scalar or shape (D,), got {arr.shape} for D={D}")
+    return arr
+
+
+def _rbf_kernel(X: np.ndarray, Z: np.ndarray, length_scale: LengthScale) -> np.ndarray:
     """
-    RBF kernel k(x,z)=exp(-||x-z||^2/(2l^2))
+    RBF kernel with optional ARD length-scales.
+
+    k(x,z) = exp( -0.5 * sum_d ((x_d - z_d)^2 / l_d^2) )
+
+    * If length_scale is a scalar -> isotropic RBF.
+    * If length_scale is an array shape (D,) -> ARD RBF.
+
     X: (N,D), Z: (M,D) -> (N,M)
     """
     X = np.asarray(X, dtype=np.float64)
     Z = np.asarray(Z, dtype=np.float64)
-    l2 = float(length_scale) ** 2
-    # squared distance via (x^2 + z^2 - 2 x·z)
-    X2 = np.sum(X * X, axis=1, keepdims=True)         # (N,1)
-    Z2 = np.sum(Z * Z, axis=1, keepdims=True).T       # (1,M)
-    d2 = X2 + Z2 - 2.0 * (X @ Z.T)                    # (N,M)
+    if X.ndim != 2 or Z.ndim != 2:
+        raise ValueError("X and Z must be 2D arrays")
+    if X.shape[1] != Z.shape[1]:
+        raise ValueError(f"X has D={X.shape[1]} but Z has D={Z.shape[1]}")
+    D = X.shape[1]
+
+    ls = _as_length_scale(length_scale, D)  # (D,)
+    # Scale inputs: Euclidean distance in scaled space equals ARD Mahalanobis
+    Xs = X / ls
+    Zs = Z / ls
+
+    X2 = np.sum(Xs * Xs, axis=1, keepdims=True)         # (N,1)
+    Z2 = np.sum(Zs * Zs, axis=1, keepdims=True).T       # (1,M)
+    d2 = X2 + Z2 - 2.0 * (Xs @ Zs.T)                    # (N,M)
     d2 = np.maximum(d2, 0.0)
-    return np.exp(-0.5 * d2 / l2)
+    return np.exp(-0.5 * d2)
 
 
 def _chol_solve(L: np.ndarray, B: np.ndarray) -> np.ndarray:
-    """
-    Solve (L L^T) X = B for X given Cholesky factor L (lower-triangular).
-    """
-    # forward solve L Y = B
+    """Solve (L L^T) X = B for X given Cholesky factor L (lower-triangular)."""
     Y = np.linalg.solve(L, B)
-    # backward solve L^T X = Y
     X = np.linalg.solve(L.T, Y)
     return X
 
 
 def _fps_inducing(X: np.ndarray, M: int, seed: int = 0) -> np.ndarray:
-    """
-    Farthest Point Sampling (FPS) in feature space using Euclidean distance.
-    Returns Z with shape (M, D).
-    Complexity: O(N*M*D) time, O(N) memory for distances.
-    """
+    """Farthest Point Sampling (FPS) in feature space using Euclidean distance."""
     rng = np.random.default_rng(seed)
     N, D = X.shape
     if M > N:
         raise ValueError(f"M={M} cannot exceed N={N}")
 
-    # pick first point randomly
     idx = np.empty(M, dtype=np.int64)
     idx[0] = rng.integers(N)
 
-    # distances to current selected set (start with dist to first center)
     diff = X - X[idx[0]]
-    dist2 = np.einsum("ij,ij->i", diff, diff)  # squared norm, shape (N,)
+    dist2 = np.einsum("ij,ij->i", diff, diff)
 
     for i in range(1, M):
         idx[i] = int(np.argmax(dist2))
@@ -112,19 +130,15 @@ def _choose_inducing(
     raise ValueError("Unknown inducing method. Use 'random', 'kmeans', or 'fps'.")
 
 
-def _heuristic_length_scale(X: np.ndarray, seed: int = 0, n_probe: int = 512) -> float:
-    """
-    Median pairwise distance heuristic on a subset.
-    """
+def _heuristic_length_scale_iso(X: np.ndarray, seed: int = 0, n_probe: int = 512) -> float:
+    """Median pairwise distance heuristic on a subset (scalar length-scale)."""
     rng = np.random.default_rng(seed)
     N = X.shape[0]
     m = min(int(n_probe), N)
     idx = rng.choice(N, size=m, replace=False)
     Xs = X[idx].astype(np.float64, copy=False)
 
-    # compute distances to a random anchor set for O(m^2) avoidance
     anchors = Xs[rng.choice(m, size=min(64, m), replace=False)]
-    # dist^2 = ||x-a||^2
     X2 = np.sum(Xs * Xs, axis=1, keepdims=True)
     A2 = np.sum(anchors * anchors, axis=1, keepdims=True).T
     d2 = X2 + A2 - 2.0 * (Xs @ anchors.T)
